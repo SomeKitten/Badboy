@@ -1,0 +1,7 @@
+{
+    "Lua.runtime.version": "LuaJIT",
+    "Lua.workspace.library": ["${3rd}/love2d/library"],
+    "Lua.workspace.checkThirdParty": false,
+    "pixelbyte.love2d.path": "C:\\love-11.3-win64\\lovec.exe",
+    "Lua.diagnostics.disable": ["lowercase-global"]
+}
