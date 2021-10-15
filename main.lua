@@ -6,39 +6,12 @@ function love.load()
 
     breakpoints = {}
     -- breakpoints[0x0100] = true
-    -- breakpoints[0xC018] = true
-    -- breakpoints[0xC062] = true
-    -- breakpoints[0xC17C] = true
-
-    -- breakpoints[0xC31D] = true
-
-    -- breakpoints[0xC418] = true
-    -- breakpoints[0xC481] = true
-
-    -- breakpoints[0xC491] = true
-    -- breakpoints[0xC34A] = true
-    -- breakpoints[0xC34D] = true
-    -- breakpoints[0xC352] = true
-
-    -- breakpoints[0xC31A] = true
-
-    -- breakpoints[0xC645] = true
-    -- breakpoints[0xC64B] = true
-    -- breakpoints[0xC651] = true
-
-    -- breakpoints[0xC65B] = true
-    -- breakpoints[0xC65E] = true
-    -- breakpoints[0xC660] = true
-
-    -- breakpoints[0xC67C] = true
-    -- breakpoints[0xC687] = true
-    -- breakpoints[0xC68D] = true
-    -- breakpoints[0xC693] = true
-    -- breakpoints[0xC6AB] = true
 
     run = true
     halt = false
     dbg = false
+    check = {}
+    check.check = false
 
     scale = 4
 
@@ -62,6 +35,7 @@ function love.load()
             print("This was nil: " .. hex4:format(index))
             debug_log()
         end
+        if index == 0xFF44 then return 0x90 end
         return value
     end
     memory.set = function(index, value)
@@ -109,8 +83,13 @@ function love.load()
     scancount = 456
     instlen = 0
     instcycles = 0
-    div_clocksum = 0
-    timer_clocksum = 0
+    -- clock_main = 0
+    -- clock_sub = 0
+    -- clock_div = 0
+    -- clock_m = 0
+    -- clock_t = 0
+    -- div_clocksum = 0
+    -- timer_clocksum = 0
 
     print("Initializing memory!")
     init_array(memory, 64 * 1024)
@@ -135,6 +114,26 @@ function love.load()
     regs.inc_PC = function(n)
         regs.set_PC(regs.get_PC() + n)
         instlen = instlen + 1
+    end
+    regs.inc_HL = function()
+        local value = regs.get_HL() + 1
+        while value > 0xFFFF do value = value - 0x10000 end
+        regs.set_HL(value)
+    end
+    regs.dec_HL = function()
+        local value = regs.get_HL() - 1
+        while value < 0 do value = value + 0x10000 end
+        regs.set_HL(value)
+    end
+    regs.inc_SP = function()
+        local value = regs.get_SP() + 1
+        while value > 0xFFFF do value = value - 0x10000 end
+        regs.set_SP(value)
+    end
+    regs.dec_SP = function()
+        local value = regs.get_SP() - 1
+        while value < 0 do value = value + 0x10000 end
+        regs.set_SP(value)
     end
 
     -- set A, B, C, D, E, H, and L registers
@@ -218,7 +217,8 @@ function love.load()
     -- tetris -- FAILED
     -- drmario -- FAILED
     -- pkred -- FAILED
-    rom_file = "./tests/blargg/cpu_instrs/individual/11-op a,(hl).gb"
+    rom_file = "./tests/blargg/cpu_instrs/individual/03-op sp,hl.gb"
+    log_file = io.open("./tests/blargg/cpu_instrs/individual/03.txt", "r")
     file_to_bytes(io.open(rom_file, "rb"), memory, 0x0000)
     file_to_bytes(io.open("tests/bios.gb", "rb"), memory, 0x0000)
 
@@ -297,7 +297,9 @@ function love.load()
     insts.INC8 = function(value)
         instcycles = 1
 
-        value = bit.band(value + 1, 0xFF)
+        value = value + 1
+
+        if value > 0xFF then value = value - 0x100 end
 
         regs.set_z(value == 0 and 1 or 0)
         regs.set_n(0)
@@ -562,9 +564,9 @@ function love.load()
         instcycles = 4
 
         local low = memory.get(regs.get_SP())
-        regs.set_SP(regs.get_SP() + 1)
+        regs.inc_SP()
         local high = memory.get(regs.get_SP())
-        regs.set_SP(regs.get_SP() + 1)
+        regs.inc_SP()
 
         regs.set_PC(set_hilo16(high, low))
     end
@@ -573,9 +575,9 @@ function love.load()
             instcycles = 5
 
             local low = memory.get(regs.get_SP())
-            regs.set_SP(regs.get_SP() + 1)
+            regs.inc_SP()
             local high = memory.get(regs.get_SP())
-            regs.set_SP(regs.get_SP() + 1)
+            regs.inc_SP()
 
             regs.set_PC(set_hilo16(high, low))
         else
@@ -586,9 +588,9 @@ function love.load()
         instcycles = 4
 
         local low = memory.get(regs.get_SP())
-        regs.set_SP(regs.get_SP() + 1)
+        regs.inc_SP()
         local high = memory.get(regs.get_SP())
-        regs.set_SP(regs.get_SP() + 1)
+        regs.inc_SP()
 
         regs.set_PC(set_hilo16(high, low))
 
@@ -640,9 +642,9 @@ function love.load()
         instcycles = 3
 
         local low = memory.get(regs.get_SP())
-        regs.set_SP(regs.get_SP() + 1)
+        regs.inc_SP()
         local high = memory.get(regs.get_SP())
-        regs.set_SP(regs.get_SP() + 1)
+        regs.inc_SP()
 
         return set_hilo16(high, low)
     end
@@ -659,9 +661,9 @@ function love.load()
     insts.CALL = function(address)
         instcycles = 6
 
-        regs.set_SP(regs.get_SP() - 1)
+        regs.dec_SP()
         memory.set(regs.get_SP(), get_hi16(regs.get_PC()))
-        regs.set_SP(regs.get_SP() - 1)
+        regs.dec_SP()
         memory.set(regs.get_SP(), get_lo16(regs.get_PC()))
 
         regs.set_PC(address)
@@ -670,9 +672,9 @@ function love.load()
         if condition then
             instcycles = 6
 
-            regs.set_SP(regs.get_SP() - 1)
+            regs.dec_SP()
             memory.set(regs.get_SP(), get_hi16(regs.get_PC()))
-            regs.set_SP(regs.get_SP() - 1)
+            regs.dec_SP()
             memory.set(regs.get_SP(), get_lo16(regs.get_PC()))
 
             regs.set_PC(address)
@@ -683,17 +685,17 @@ function love.load()
     insts.PUSH = function(value)
         instcycles = 4
 
-        regs.set_SP(regs.get_SP() - 1)
+        regs.dec_SP()
         memory.set(regs.get_SP(), get_hi16(value))
-        regs.set_SP(regs.get_SP() - 1)
+        regs.dec_SP()
         memory.set(regs.get_SP(), get_lo16(value))
     end
     insts.RST = function(value)
         instcycles = 4
 
-        regs.set_SP(regs.get_SP() - 1)
+        regs.dec_SP()
         memory.set(regs.get_SP(), get_hi16(regs.get_PC()))
-        regs.set_SP(regs.get_SP() - 1)
+        regs.dec_SP()
         memory.set(regs.get_SP(), get_lo16(regs.get_PC()))
 
         regs.set_PC(value)
@@ -879,11 +881,17 @@ function debug_log()
     print()
     print()
     print("AF: " .. (regs.AF ~= nil and hex4:format(regs.AF) or "nil"))
+    print("CHECK AF: " .. (hex4:format(set_hilo16(check.a, check.f))))
     print("BC: " .. (regs.BC ~= nil and hex4:format(regs.BC) or "nil"))
+    print("CHECK BC: " .. (hex4:format(set_hilo16(check.b, check.c))))
     print("DE: " .. (regs.DE ~= nil and hex4:format(regs.DE) or "nil"))
+    print("CHECK DE: " .. (hex4:format(set_hilo16(check.d, check.e))))
     print("HL: " .. (regs.HL ~= nil and hex4:format(regs.HL) or "nil"))
+    print("CHECK HL: " .. (hex4:format(set_hilo16(check.h, check.l))))
     print("SP: " .. (regs.SP ~= nil and hex4:format(regs.SP) or "nil"))
+    print("CHECK SP: " .. (hex4:format(check.sp)))
     print("PC: " .. (regs.PC ~= nil and hex4:format(regs.PC) or "nil"))
+    print("CHECK PC: " .. (hex4:format(check.pc)))
 
     print("FF0F: " .. hex2:format(memory.get(0xFF0F)))
     print("FFFF: " .. hex2:format(memory.get(0xFFFF)))
@@ -920,6 +928,8 @@ function love.update(dt)
             instcycles = 1
         end
 
+        if check.check or regs.get_PC() == 0x100 then check_log() end
+
         if instcycles == -1 then
             print("Unset instcycles")
             debug_log()
@@ -927,7 +937,7 @@ function love.update(dt)
 
         if run_graphics() then break end
 
-        run_timer()
+        -- run_timer()
 
         run_interrupts()
     end
@@ -963,37 +973,80 @@ function love.update(dt)
     -- print()
 end
 
--- https://emudev.de/gameboy-emulator/interrupts-and-timers/
-function run_timer()
-    div_clocksum = div_clocksum + instcycles
-    if div_clocksum > 0xFF then
-        div_clocksum = div_clocksum - 0xFF
-        memory.inc(0xFF04)
-    end
+function check_log()
+    check.check = true
 
-    if get_bit(memory[0xFF07], 2) == 1 then
-        timer_clocksum = timer_clocksum + instcycles * 4
-
-        local freq = 0x1000
-        if bit.band(memory[0xFF07], 0x3) == 1 then
-            freq = 0x40000
-        elseif bit.band(memory[0xFF07], 0x3) == 2 then
-            freq = 0x10000
-        elseif bit.band(memory[0xFF07], 0x3) == 3 then
-            freq = 0x4000
-        end
-
-        while timer_clocksum > 0x40000 do
-            memory.inc(0xFF05)
-            if memory.get(0xFF05) == 0x00 then
-                memory.set_IF(3, 1)
-                memory.set(0xFF05, memory.get(0xFF06))
-            end
-
-            timer_clocksum = timer_clocksum - 0x40000 / freq
-        end
+    local line = log_file:read()
+    if line ~= nil then
+        check.a = tonumber(line:sub(4, 5), 16)
+        check.f = tonumber(line:sub(10, 11), 16)
+        check.b = tonumber(line:sub(16, 17), 16)
+        check.c = tonumber(line:sub(22, 23), 16)
+        check.d = tonumber(line:sub(28, 29), 16)
+        check.e = tonumber(line:sub(34, 35), 16)
+        check.h = tonumber(line:sub(40, 41), 16)
+        check.l = tonumber(line:sub(46, 47), 16)
+        check.sp = tonumber(line:sub(53, 56), 16)
+        check.pc = tonumber(line:sub(65, 68), 16)
+        if check.a ~= regs.get_A() or check.f ~= get_lo16(regs.get_AF()) or
+            check.b ~= regs.get_B() or check.c ~= regs.get_C() or check.d ~=
+            regs.get_D() or check.e ~= regs.get_E() or check.h ~= regs.get_H() or
+            check.l ~= regs.get_L() or check.sp ~= regs.get_SP() or check.pc ~=
+            regs.get_PC() then dbg = true end
     end
 end
+
+-- -- https://emudev.de/gameboy-emulator/interrupts-and-timers/
+-- -- http://imrannazar.com/GameBoy-Emulation-in-JavaScript:-Timers
+-- function run_timer()
+--     clock_sub = clock_sub + instcycles
+
+--     if clock_sub >= 4 then
+--         clock_main = clock_main + 1
+--         clock_sub = clock_sub - 4
+
+--         clock_div = clock_div + 1
+--         if clock_div == 16 then
+--             memory.set(0xFF04, bit.band((memory.get(0xFF04) + 1), 0xFF))
+--             clock_div = 0;
+--         end
+--     end
+
+--     check_timer();
+
+--     -- 
+
+--     -- div_clocksum = div_clocksum + instcycles
+--     -- if div_clocksum > 0xFF then
+--     --     div_clocksum = div_clocksum - 0xFF
+--     --     memory.inc(0xFF04)
+--     -- end
+
+--     -- if get_bit(memory[0xFF07], 2) == 1 then
+--     --     timer_clocksum = timer_clocksum + instcycles * 4
+
+--     --     local freq = 0x1000
+--     --     if bit.band(memory[0xFF07], 0x3) == 1 then
+--     --         freq = 0x40000
+--     --     elseif bit.band(memory[0xFF07], 0x3) == 2 then
+--     --         freq = 0x10000
+--     --     elseif bit.band(memory[0xFF07], 0x3) == 3 then
+--     --         freq = 0x4000
+--     --     end
+
+--     --     while timer_clocksum > 0x40000 do
+--     --         memory.inc(0xFF05)
+--     --         if memory.get(0xFF05) == 0x00 then
+--     --             memory.set_IF(3, 1)
+--     --             memory.set(0xFF05, memory.get(0xFF06))
+--     --         end
+
+--     --         timer_clocksum = timer_clocksum - 0x40000 / freq
+--     --     end
+--     -- end
+-- end
+
+function check_timer() end
 
 function run_interrupts()
     if regs.IME == 1 then
@@ -1010,9 +1063,9 @@ function run_interrupts()
                         local stack_PC = 0
                         stack_PC = regs.get_PC()
 
-                        regs.set_SP(regs.get_SP() - 1)
+                        regs.dec_SP()
                         memory.set(regs.get_SP(), get_hi16(stack_PC))
-                        regs.set_SP(regs.get_SP() - 1)
+                        regs.dec_SP()
                         memory.set(regs.get_SP(), get_lo16(stack_PC))
 
                         regs.set_PC(interrupts[i + 1])
@@ -1196,6 +1249,9 @@ function love.draw()
                        scale)
     love.graphics.draw(canvas, -scrollx * scale + bgsize,
                        -scrolly * scale + bgsize, 0, scale)
+
+    love.graphics.setColor(0.4, 0.7, 0.3)
+    love.graphics.print(hex4:format(regs.get_PC()))
 end
 
 function love.keypressed(key, scancode, isrepeat)
@@ -1295,8 +1351,6 @@ function init_array(arr, bytes) for i = 0, bytes - 1, 1 do arr[i] = 0x00 end end
 
 -- function boot() end
 
-function is_debug() return regs.get_PC() >= 0x64 and regs.get_PC() <= 0x90 end
-
 function run_inst()
     local opcode = memory.get(regs.get_PC())
 
@@ -1368,12 +1422,12 @@ function run_inst()
                     if p == 2 then
                         instcycles = 2
                         memory.set(regs.get_HL(), regs.get_A())
-                        regs.set_HL(regs.get_HL() + 1)
+                        regs.inc_HL()
                     end
                     if p == 3 then
                         instcycles = 2
                         memory.set(regs.get_HL(), regs.get_A())
-                        regs.set_HL(regs.get_HL() - 1)
+                        regs.dec_HL()
                     end
                 elseif q == 1 then
                     if p == 0 then
@@ -1387,21 +1441,29 @@ function run_inst()
                     if p == 2 then
                         instcycles = 2
                         regs.set_A(memory.get(regs.get_HL()))
-                        regs.set_HL(regs.get_HL() + 1)
+                        regs.inc_HL()
                     end
                     if p == 3 then
                         instcycles = 2
                         regs.set_A(memory.get(regs.get_HL()))
-                        regs.set_HL(regs.get_HL() - 1)
+                        regs.dec_HL()
                     end
                 end
             elseif z == 3 then
                 if q == 0 then
                     instcycles = 2
-                    regs[lookups.rp[p]] = regs[lookups.rp[p]] + 1
+                    local value = regs[lookups.rp[p]] + 1
+                    while value > 0xFFFF do
+                        value = value - 0x10000
+                    end
+                    regs[lookups.rp[p]] = value
                 elseif q == 1 then
                     instcycles = 2
-                    regs[lookups.rp[p]] = regs[lookups.rp[p]] - 1
+                    local value = regs[lookups.rp[p]] - 1
+                    while value < 0 do
+                        value = value + 0x10000
+                    end
+                    regs[lookups.rp[p]] = value
                 end
             elseif z == 4 then
                 regs["set_" .. lookups.r[y]](
