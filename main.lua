@@ -1,4 +1,7 @@
 function love.load()
+    local file = io.open("debug.log", "w")
+    file:close()
+
     print("Starting!")
 
     breakpoints = {}
@@ -19,7 +22,14 @@ function love.load()
 
     -- breakpoints[0xC31A] = true
 
-    -- breakpoints[0xC659] = true
+    -- breakpoints[0xC645] = true
+    -- breakpoints[0xC64B] = true
+    -- breakpoints[0xC651] = true
+
+    -- breakpoints[0xC65B] = true
+    -- breakpoints[0xC65E] = true
+    -- breakpoints[0xC660] = true
+
     -- breakpoints[0xC67C] = true
     -- breakpoints[0xC687] = true
     -- breakpoints[0xC68D] = true
@@ -30,7 +40,7 @@ function love.load()
     halt = false
     dbg = false
 
-    scale = 1
+    scale = 4
 
     love.window.setMode(160 * scale, 144 * scale)
     -- love.window.setMode(160 * 4, 144 * 4)
@@ -49,13 +59,16 @@ function love.load()
     memory.get = function(index)
         local value = memory[index]
         if value == nil then
-            print("index: " .. hex4:format(index))
+            print("This was nil: " .. hex4:format(index))
             debug_log()
         end
         return value
     end
     memory.set = function(index, value)
-        if value == nil then debug_log() end
+        if value == nil then
+            print("Tried to set to nil: " .. hex4:format(index))
+            debug_log()
+        end
         -- if index == 0xDD02 then dbg = true end
         if index == 0xFF04 then memory[index] = 0 end
         if index == 0xFF0F and value ~= 0xE1 then
@@ -127,7 +140,14 @@ function love.load()
     -- set A, B, C, D, E, H, and L registers
 
     regs.set_A = function(value)
-        if value == nil then debug_log() end
+        if value == nil then
+            print("Tried to set A to nil")
+            debug_log()
+        end
+        -- if value == 0xB6 then
+        --     print("Setting A!")
+        --     debug_log()
+        -- end
         regs.set_AF(set_hi16(regs.AF, value))
     end
     regs.set_B = function(value) regs.set_BC(set_hi16(regs.BC, value)) end
@@ -147,7 +167,7 @@ function love.load()
     regs.get_E = function() return get_lo16(regs.get_DE()) end
     regs.get_H = function() return get_hi16(regs.get_HL()) end
     regs.get_L = function() return get_lo16(regs.get_HL()) end
-    regs["get_(HL)"] = function() return memory.get(regs.HL) end
+    regs["get_(HL)"] = function() return memory.get(regs.get_HL()) end
 
     regs.set_AF = function(value) regs.AF = bit.band(value, 0xFFF0) end
     regs.set_BC = function(value) regs.BC = value end
@@ -184,21 +204,21 @@ function love.load()
     regs.get_IME = function() return regs.IME end
 
     print("Loading boot rom!")
-    -- 01-special.gb -- FAILED -- POP AF FAILED #5
+    -- 01-special.gb -- PASSED
     -- 02-interrupts.gb -- FAILED -- TIMER DOESNT WORK FAILED #4
-    -- 03-op sp,hl.gb -- FAILED -- OVERFLOW
+    -- 03-op sp,hl.gb -- FAILED -- E8 E8 F8 F8
     -- 04-op r,imm.gb -- FAILED -- CE DE
     -- 05-op rp.gb -- PASSED
     -- 06-ld r,r.gb -- PASSED
-    -- 07-jr,jp,call,ret,rst.gb -- FAILED -- INF LOOP
-    -- 08-misc instrs.gb -- FAILED -- INF LOOP
+    -- 07-jr,jp,call,ret,rst.gb -- PASSED
+    -- 08-misc instrs.gb -- FAILED -- PASSED
     -- 09-op r,r.gb -- FAILED -- -LOTS OF HEX-
     -- 10-bit ops.gb -- PASSED
     -- 11-op a,(hl).gb -- FAILED
     -- tetris -- FAILED
     -- drmario -- FAILED
     -- pkred -- FAILED
-    rom_file = "tests/03-op sp,hl.gb"
+    rom_file = "./tests/blargg/cpu_instrs/individual/11-op a,(hl).gb"
     file_to_bytes(io.open(rom_file, "rb"), memory, 0x0000)
     file_to_bytes(io.open("tests/bios.gb", "rb"), memory, 0x0000)
 
@@ -337,32 +357,28 @@ function love.load()
         regs.set_h(0)
         regs.set_c(shifted)
     end
-    -- https://ehaskins.com/2018-01-30%20Z80%20DAA/
+    -- https://archive.nes.science/nesdev-forums/f20/t15944.xhtml
     insts.DAA = function()
         instcycles = 1
-
-        local correction = 0
-
-        local c_flag = 0
-
-        local value = regs.get_A()
-
-        if regs.get_h() or (not regs.get_n() and bit.band(value, 0xF) > 9) then
-            correction = 0x6
+        local a = regs.get_A()
+        if regs.get_n() == 0 then
+            if regs.get_c() == 1 or a > 0x99 then
+                a = a + 0x60
+                regs.set_c(1)
+            end
+            if regs.get_h() == 1 or bit.band(a, 0x0f) > 0x09 then
+                a = a + 0x6
+            end
+        else
+            if regs.get_c() == 1 then a = a - 0x60 end
+            if regs.get_h() == 1 then a = a - 0x6 end
         end
 
-        if regs.get_c() or (not regs.get_n() and value > 0x99) then
-            correction = bit.bor(correction, 0x60)
-            c_flag = regs.get_c()
-        end
+        while a > 0xFF do a = a - 0x100 end
+        regs.set_A(a)
 
-        value = value + regs.get_n() and -correction or correction
-
-        value = bit.band(value, 0xff)
-
-        regs.set_z(value == 0 and regs.get_z() or 0)
+        regs.set_z(a == 0 and 1 or 0)
         regs.set_h(0)
-        regs.set_c(c_flag)
     end
     insts.CPL = function()
         instcycles = 1
@@ -604,13 +620,16 @@ function love.load()
         return bit.band(value, 0xFFFF)
     end
     insts.ADDSPD = function(value)
+        print("SP fix")
+        debug_log()
+
         overflow3 = get_bit(get_lo8(regs.get_SP()) + get_lo8(value), 4)
 
         value = regs.get_SP() + value
 
         overflow7 = get_bit(value, 8)
 
-        regs.set_z(value == 0 and 1 or 0)
+        regs.set_z(0)
         regs.set_n(0)
         regs.set_h(overflow3)
         regs.set_c(overflow7)
@@ -902,7 +921,7 @@ function love.update(dt)
         end
 
         if instcycles == -1 then
-            print("unset instcycles")
+            print("Unset instcycles")
             debug_log()
         end
 
@@ -1283,6 +1302,7 @@ function run_inst()
 
     if dbg or breakpoints[regs.get_PC()] ~= nil then
         dbg = true
+        print("Breakpoint!")
         debug_log()
     end
     if dbg then run = false end
@@ -1314,7 +1334,8 @@ function run_inst()
                 elseif y == 1 then
                     regs.inc_PC(2)
                     instcycles = 5
-                    memory.set(nn, regs.get_SP())
+                    memory.set(nn, get_lo16(regs.get_SP()))
+                    memory.set(nn + 1, get_hi16(regs.get_SP()))
                 elseif y == 2 then
                     regs.inc_PC(1)
                     insts.STOP()
@@ -1551,4 +1572,20 @@ function file_to_bytes(file, byte_array, start)
 
         i = i + 1
     end
+end
+
+function print(text)
+    local file = io.open("debug.log", "a+")
+
+    file:write(text ~= nil and (text .. "\n") or "nil\n")
+
+    file:close()
+end
+
+function io.write(text)
+    local file = io.open("debug.log", "a+")
+
+    file:write(text ~= nil and (text) or "nil")
+
+    file:close()
 end
