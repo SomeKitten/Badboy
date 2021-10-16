@@ -6,12 +6,18 @@ function love.load()
 
     breakpoints = {}
     -- breakpoints[0x0100] = true
+    -- breakpoints[0xDEF9] = true
+
+    prev_opcodes = {}
 
     run = true
     halt = false
     dbg = false
+    dbg_msg = ""
     check = {}
     check.check = false
+
+    inst_count = 0
 
     scale = 4
 
@@ -35,7 +41,7 @@ function love.load()
             print("This was nil: " .. hex4:format(index))
             debug_log()
         end
-        if index == 0xFF44 then return 0x90 end
+        -- if index == 0xFF44 then return 0x90 end
         return value
     end
     memory.set = function(index, value)
@@ -82,7 +88,7 @@ function love.load()
 
     scancount = 456
     instlen = 0
-    instcycles = 0
+    inst_cycles = 0
     -- clock_main = 0
     -- clock_sub = 0
     -- clock_div = 0
@@ -205,20 +211,20 @@ function love.load()
     print("Loading boot rom!")
     -- 01-special.gb -- PASSED
     -- 02-interrupts.gb -- FAILED -- TIMER DOESNT WORK FAILED #4
-    -- 03-op sp,hl.gb -- FAILED -- E8 E8 F8 F8
-    -- 04-op r,imm.gb -- FAILED -- CE DE
+    -- 03-op sp,hl.gb -- PASSED
+    -- 04-op r,imm.gb -- PASSED
     -- 05-op rp.gb -- PASSED
     -- 06-ld r,r.gb -- PASSED
     -- 07-jr,jp,call,ret,rst.gb -- PASSED
-    -- 08-misc instrs.gb -- FAILED -- PASSED
-    -- 09-op r,r.gb -- FAILED -- -LOTS OF HEX-
+    -- 08-misc instrs.gb -- PASSED
+    -- 09-op r,r.gb -- PASSED
     -- 10-bit ops.gb -- PASSED
-    -- 11-op a,(hl).gb -- FAILED
+    -- 11-op a,(hl).gb -- PASSED
     -- tetris -- FAILED
     -- drmario -- FAILED
     -- pkred -- FAILED
-    rom_file = "./tests/blargg/cpu_instrs/individual/03-op sp,hl.gb"
-    log_file = io.open("./tests/blargg/cpu_instrs/individual/03.txt", "r")
+    rom_file = "./tests/tetris.gb"
+    -- log_file = io.open("./tests/blargg/cpu_instrs/individual/11.txt", "r")
     file_to_bytes(io.open(rom_file, "rb"), memory, 0x0000)
     file_to_bytes(io.open("tests/bios.gb", "rb"), memory, 0x0000)
 
@@ -274,32 +280,32 @@ function love.load()
 
     insts = {}
     insts.NOP = function()
-        instcycles = 1
+        inst_cycles = 1
         -- print("NOP")
         -- debug_log()
     end
     insts.STOP = function()
-        instcycles = 0
+        inst_cycles = 0
         print("STOP")
     end
     insts.JR = function(relative)
-        instcycles = 3
+        inst_cycles = 3
         regs.set_PC(regs.get_PC() + relative)
     end
     insts.JRC = function(condition, relative)
         if condition then
-            instcycles = 3
+            inst_cycles = 3
             regs.set_PC(regs.get_PC() + relative)
         else
-            instcycles = 2
+            inst_cycles = 2
         end
     end
     insts.INC8 = function(value)
-        instcycles = 1
+        inst_cycles = 1
 
         value = value + 1
 
-        if value > 0xFF then value = value - 0x100 end
+        while value > 0xFF do value = value - 0x100 end
 
         regs.set_z(value == 0 and 1 or 0)
         regs.set_n(0)
@@ -308,9 +314,11 @@ function love.load()
         return value
     end
     insts.DEC8 = function(value)
-        instcycles = 1
+        inst_cycles = 1
 
-        value = bit.band(value - 1, 0xFF)
+        value = value - 1
+
+        while value < 0 do value = value + 0x100 end
 
         regs.set_z(value == 0 and 1 or 0)
         regs.set_n(1)
@@ -319,41 +327,45 @@ function love.load()
         return value
     end
     insts.RLCA = function()
-        instcycles = 1
+        inst_cycles = 1
 
-        shifted = get_bit(regs.get_A(), 7)
+        local shifted = get_bit(regs.get_A(), 7)
         regs.set_A(bit.band(bit.lshift(regs.get_A(), 1) + shifted, 0xFF))
+
         regs.set_z(0)
         regs.set_n(0)
         regs.set_h(0)
         regs.set_c(shifted)
     end
     insts.RRCA = function()
-        instcycles = 1
+        inst_cycles = 1
 
-        shifted = get_bit(regs.get_A(), 0)
-        regs.set_A(bit.rshift(regs.get_A(), 1))
+        local shifted = get_bit(regs.get_A(), 0)
+        regs.set_A(bit.bor(bit.rshift(regs.get_A(), 1), bit.lshift(shifted, 7)))
+
         regs.set_z(0)
         regs.set_n(0)
         regs.set_h(0)
         regs.set_c(shifted)
     end
     insts.RRA = function()
-        instcycles = 1
+        inst_cycles = 1
 
-        shifted = get_bit(regs.get_A(), 0)
+        local shifted = get_bit(regs.get_A(), 0)
         regs.set_A(bit.rshift(regs.get_A(), 1))
         regs.set_A(set_bit(regs.get_A(), regs.get_c(), 7))
+
         regs.set_z(0)
         regs.set_n(0)
         regs.set_h(0)
         regs.set_c(shifted)
     end
     insts.RLA = function()
-        instcycles = 1
+        inst_cycles = 1
 
-        shifted = get_bit(regs.get_A(), 7)
+        local shifted = get_bit(regs.get_A(), 7)
         regs.set_A(bit.band(bit.lshift(regs.get_A(), 1) + regs.get_c(), 0xFF))
+
         regs.set_z(0)
         regs.set_n(0)
         regs.set_h(0)
@@ -361,7 +373,7 @@ function love.load()
     end
     -- https://archive.nes.science/nesdev-forums/f20/t15944.xhtml
     insts.DAA = function()
-        instcycles = 1
+        inst_cycles = 1
         local a = regs.get_A()
         if regs.get_n() == 0 then
             if regs.get_c() == 1 or a > 0x99 then
@@ -383,45 +395,45 @@ function love.load()
         regs.set_h(0)
     end
     insts.CPL = function()
-        instcycles = 1
+        inst_cycles = 1
 
         regs.set_A(bit.bnot(regs.get_A()))
         regs.set_n(1)
         regs.set_h(1)
     end
     insts.SCF = function()
-        instcycles = 1
+        inst_cycles = 1
 
         regs.set_n(0)
         regs.set_h(0)
         regs.set_c(1)
     end
     insts.CCF = function()
-        instcycles = 1
+        inst_cycles = 1
 
         regs.set_n(0)
         regs.set_h(0)
-        regs.set_c(bit.bnot(regs.get_c()))
+        regs.set_c((regs.get_c() == 1) and 0 or 1)
     end
     insts.HALT = function()
-        instcycles = 0
+        inst_cycles = 0
         halt = true
     end
     insts["ADD A"] = function(value)
         if type(value) == "string" then
-            instcycles = 1
+            inst_cycles = 1
             value = regs["get_" .. value]()
         else
-            instcycles = 2
+            inst_cycles = 2
         end
 
-        overflow3 = get_bit(get_lo8(regs.get_A()) + get_lo8(value), 4)
+        overflow3 = (get_lo8(regs.get_A()) + get_lo8(value) > 0xF) and 1 or 0
 
         value = regs.get_A() + value
 
-        overflow7 = get_bit(value, 8)
+        overflow7 = (value > 0xFF) and 1 or 0
 
-        value = bit.band(value, 0xFF)
+        while value > 0xFF do value = value - 0x100 end
 
         regs.set_A(value)
 
@@ -432,21 +444,21 @@ function love.load()
     end
     insts["ADC A"] = function(value)
         if type(value) == "string" then
-            instcycles = 1
+            inst_cycles = 1
             value = regs["get_" .. value]()
         else
-            instcycles = 2
+            inst_cycles = 2
         end
 
+        value3 = get_lo8(value) + regs.get_c()
         value = value + regs.get_c()
 
-        overflow3 = get_bit(get_lo8(regs.get_A()) + get_lo8(value), 4)
+        overflow3 = (get_lo8(regs.get_A()) + value3 > 0xF) and 1 or 0
+        overflow7 = (regs.get_A() + value > 0xFF) and 1 or 0
 
         value = regs.get_A() + value
 
-        overflow7 = get_bit(value, 8)
-
-        value = bit.band(value, 0xFF)
+        while value > 0xFF do value = value - 0x100 end
 
         regs.set_A(value)
 
@@ -457,10 +469,10 @@ function love.load()
     end
     insts["SUB"] = function(value)
         if type(value) == "string" then
-            instcycles = 1
+            inst_cycles = 1
             value = regs["get_" .. value]()
         else
-            instcycles = 2
+            inst_cycles = 2
         end
 
         regs.set_c(value > regs.get_A() and 1 or 0)
@@ -475,18 +487,21 @@ function love.load()
     end
     insts["SBC A"] = function(value)
         if type(value) == "string" then
-            instcycles = 1
+            inst_cycles = 1
             value = regs["get_" .. value]()
         else
-            instcycles = 2
+            inst_cycles = 2
         end
 
+        value3 = get_lo8(value) + regs.get_c()
         value = value + regs.get_c()
 
         regs.set_c(value > regs.get_A() and 1 or 0)
-        regs.set_h(get_lo8(value) > get_lo8(regs.get_A()) and 1 or 0)
+        regs.set_h(value3 > get_lo8(regs.get_A()) and 1 or 0)
 
         value = regs.get_A() - value
+
+        while value < 0 do value = value + 0x100 end
 
         regs.set_A(value)
 
@@ -495,10 +510,10 @@ function love.load()
     end
     insts["AND"] = function(value)
         if type(value) == "string" then
-            instcycles = 1
+            inst_cycles = 1
             value = regs["get_" .. value]()
         else
-            instcycles = 2
+            inst_cycles = 2
         end
 
         value = bit.band(regs.get_A(), value)
@@ -512,10 +527,10 @@ function love.load()
     end
     insts["XOR"] = function(value)
         if type(value) == "string" then
-            instcycles = 1
+            inst_cycles = 1
             value = regs["get_" .. value]()
         else
-            instcycles = 2
+            inst_cycles = 2
         end
 
         value = bit.bxor(regs.get_A(), value)
@@ -529,10 +544,10 @@ function love.load()
     end
     insts["OR"] = function(value)
         if type(value) == "string" then
-            instcycles = 1
+            inst_cycles = 1
             value = regs["get_" .. value]()
         else
-            instcycles = 2
+            inst_cycles = 2
         end
 
         value = bit.bor(regs.get_A(), value)
@@ -546,10 +561,10 @@ function love.load()
     end
     insts["CP"] = function(value)
         if type(value) == "string" then
-            instcycles = 1
+            inst_cycles = 1
             value = regs["get_" .. value]()
         else
-            instcycles = 2
+            inst_cycles = 2
         end
 
         regs.set_c(value > regs.get_A() and 1 or 0)
@@ -561,7 +576,7 @@ function love.load()
         regs.set_n(1)
     end
     insts.RET = function()
-        instcycles = 4
+        inst_cycles = 4
 
         local low = memory.get(regs.get_SP())
         regs.inc_SP()
@@ -572,7 +587,7 @@ function love.load()
     end
     insts.RETC = function(condition)
         if condition then
-            instcycles = 5
+            inst_cycles = 5
 
             local low = memory.get(regs.get_SP())
             regs.inc_SP()
@@ -581,11 +596,11 @@ function love.load()
 
             regs.set_PC(set_hilo16(high, low))
         else
-            instcycles = 2
+            inst_cycles = 2
         end
     end
     insts.RETI = function()
-        instcycles = 4
+        inst_cycles = 4
 
         local low = memory.get(regs.get_SP())
         regs.inc_SP()
@@ -602,10 +617,10 @@ function love.load()
     end
     insts.JPC = function(condition, address)
         if condition then
-            instcycles = 4
+            inst_cycles = 4
             regs.set_PC(address)
         else
-            instcycles = 3
+            inst_cycles = 3
         end
     end
     insts.ADD = function(register, value)
@@ -619,17 +634,19 @@ function love.load()
         regs.set_h(bit.rshift(threequaterreg + threequaterval, 12))
         regs.set_c(bit.rshift(value, 16))
 
-        return bit.band(value, 0xFFFF)
+        while value > 0xFFFF do value = value - 0x10000 end
+
+        return value
     end
     insts.ADDSPD = function(value)
-        print("SP fix")
-        debug_log()
-
-        overflow3 = get_bit(get_lo8(regs.get_SP()) + get_lo8(value), 4)
+        overflow3 = (get_lo8(regs.get_SP()) + get_lo8(value) > 0xF) and 1 or 0
+        overflow7 = (get_lo16(regs.get_SP()) + get_lo16(value) > 0xFF) and 1 or
+                        0
 
         value = regs.get_SP() + value
 
-        overflow7 = get_bit(value, 8)
+        while value > 0xFFFF do value = value - 0x10000 end
+        while value < 0 do value = value + 0x10000 end
 
         regs.set_z(0)
         regs.set_n(0)
@@ -639,7 +656,7 @@ function love.load()
         return value
     end
     insts.POP = function()
-        instcycles = 3
+        inst_cycles = 3
 
         local low = memory.get(regs.get_SP())
         regs.inc_SP()
@@ -649,17 +666,17 @@ function love.load()
         return set_hilo16(high, low)
     end
     insts.DI = function()
-        instcycles = 1
+        inst_cycles = 1
 
         regs.set_IME(0)
     end
     insts.EI = function()
-        instcycles = 1
+        inst_cycles = 1
 
         regs.set_IME(1)
     end
     insts.CALL = function(address)
-        instcycles = 6
+        inst_cycles = 6
 
         regs.dec_SP()
         memory.set(regs.get_SP(), get_hi16(regs.get_PC()))
@@ -670,7 +687,7 @@ function love.load()
     end
     insts.CALLC = function(condition, address)
         if condition then
-            instcycles = 6
+            inst_cycles = 6
 
             regs.dec_SP()
             memory.set(regs.get_SP(), get_hi16(regs.get_PC()))
@@ -679,11 +696,11 @@ function love.load()
 
             regs.set_PC(address)
         else
-            instcycles = 3
+            inst_cycles = 3
         end
     end
     insts.PUSH = function(value)
-        instcycles = 4
+        inst_cycles = 4
 
         regs.dec_SP()
         memory.set(regs.get_SP(), get_hi16(value))
@@ -691,7 +708,7 @@ function love.load()
         memory.set(regs.get_SP(), get_lo16(value))
     end
     insts.RST = function(value)
-        instcycles = 4
+        inst_cycles = 4
 
         regs.dec_SP()
         memory.set(regs.get_SP(), get_hi16(regs.get_PC()))
@@ -702,12 +719,12 @@ function love.load()
     end
     insts.RLC = function(register)
         if register == "(HL)" then
-            instcycles = 4
+            inst_cycles = 4
         else
-            instcycles = 2
+            inst_cycles = 2
         end
 
-        shifted = get_bit(regs["get_" .. register](), 7)
+        local shifted = get_bit(regs["get_" .. register](), 7)
 
         local value = bit.band(bit.lshift(regs["get_" .. register](), 1) +
                                    shifted, 0xFF)
@@ -720,14 +737,15 @@ function love.load()
     end
     insts.RRC = function(register)
         if register == "(HL)" then
-            instcycles = 4
+            inst_cycles = 4
         else
-            instcycles = 2
+            inst_cycles = 2
         end
 
-        shifted = get_bit(regs["get_" .. register](), 0)
+        local shifted = get_bit(regs["get_" .. register](), 0)
 
         local value = bit.rshift(regs["get_" .. register](), 1)
+        value = bit.bor(value, bit.lshift(shifted, 7))
         regs["set_" .. register](value)
 
         regs.set_z(value == 0 and 1 or 0)
@@ -737,12 +755,12 @@ function love.load()
     end
     insts.RL = function(register)
         if register == "(HL)" then
-            instcycles = 4
+            inst_cycles = 4
         else
-            instcycles = 2
+            inst_cycles = 2
         end
 
-        shifted = get_bit(regs["get_" .. register](), 7)
+        local shifted = get_bit(regs["get_" .. register](), 7)
 
         local value = bit.band(bit.lshift(regs["get_" .. register](), 1) +
                                    regs.get_c(), 0xFF)
@@ -755,14 +773,14 @@ function love.load()
     end
     insts.RR = function(register)
         if register == "(HL)" then
-            instcycles = 4
+            inst_cycles = 4
         else
-            instcycles = 2
+            inst_cycles = 2
         end
 
         local reg_val = regs["get_" .. register]()
 
-        shifted = get_bit(reg_val, 0)
+        local shifted = get_bit(reg_val, 0)
 
         local value = bit.rshift(reg_val, 1)
         value = set_bit(value, regs.get_c(), 7)
@@ -775,12 +793,12 @@ function love.load()
     end
     insts.SLA = function(register)
         if register == "(HL)" then
-            instcycles = 4
+            inst_cycles = 4
         else
-            instcycles = 2
+            inst_cycles = 2
         end
 
-        shifted = get_bit(regs["get_" .. register](), 7)
+        local shifted = get_bit(regs["get_" .. register](), 7)
         local value = bit.band(bit.lshift(regs["get_" .. register](), 1), 0xFF)
         regs["set_" .. register](value)
         regs.set_z(value == 0 and 1 or 0)
@@ -790,16 +808,18 @@ function love.load()
     end
     insts.SRA = function(register)
         if register == "(HL)" then
-            instcycles = 4
+            inst_cycles = 4
         else
-            instcycles = 2
+            inst_cycles = 2
         end
 
-        shifted = get_bit(regs["get_" .. register](), 0)
+        local shifted = get_bit(regs["get_" .. register](), 0)
         bit7 = get_bit(regs["get_" .. register](), 7)
         local value = bit.rshift(regs["get_" .. register](), 1)
-        value = set_bit(regs["get_" .. register](), bit7, 7)
+        value = set_bit(value, bit7, 7)
+
         regs["set_" .. register](value)
+
         regs.set_z(value == 0 and 1 or 0)
         regs.set_n(0)
         regs.set_h(0)
@@ -807,9 +827,9 @@ function love.load()
     end
     insts.SWAP = function(register)
         if register == "(HL)" then
-            instcycles = 4
+            inst_cycles = 4
         else
-            instcycles = 2
+            inst_cycles = 2
         end
 
         local value = regs["get_" .. register]()
@@ -820,16 +840,16 @@ function love.load()
         regs.set_z(value == 0 and 1 or 0)
         regs.set_n(0)
         regs.set_h(0)
-        regs.set_c(shifted)
+        regs.set_c(0)
     end
     insts.SRL = function(register)
         if register == "(HL)" then
-            instcycles = 4
+            inst_cycles = 4
         else
-            instcycles = 2
+            inst_cycles = 2
         end
 
-        shifted = get_bit(regs["get_" .. register](), 0)
+        local shifted = get_bit(regs["get_" .. register](), 0)
         local value = bit.rshift(regs["get_" .. register](), 1)
         regs["set_" .. register](value)
         regs.set_z(value == 0 and 1 or 0)
@@ -839,9 +859,9 @@ function love.load()
     end
     insts.BIT = function(i, register)
         if register == "(HL)" then
-            instcycles = 3
+            inst_cycles = 3
         else
-            instcycles = 2
+            inst_cycles = 2
         end
 
         local value = get_bit(regs["get_" .. register](), i)
@@ -853,18 +873,18 @@ function love.load()
     end
     insts.RES = function(i, register)
         if register == "(HL)" then
-            instcycles = 4
+            inst_cycles = 4
         else
-            instcycles = 2
+            inst_cycles = 2
         end
 
         regs["set_" .. register](set_bit(regs["get_" .. register](), 0, i))
     end
     insts.SET = function(i, register)
         if register == "(HL)" then
-            instcycles = 4
+            inst_cycles = 4
         else
-            instcycles = 2
+            inst_cycles = 2
         end
 
         regs["set_" .. register](set_bit(regs["get_" .. register](), 1, i))
@@ -878,8 +898,8 @@ function love.load()
 end
 
 function debug_log()
-    print()
-    print()
+    if dbg_msg ~= "" then print(dbg_msg) end
+    print("")
     print("AF: " .. (regs.AF ~= nil and hex4:format(regs.AF) or "nil"))
     print("CHECK AF: " .. (hex4:format(set_hilo16(check.a, check.f))))
     print("BC: " .. (regs.BC ~= nil and hex4:format(regs.BC) or "nil"))
@@ -895,6 +915,26 @@ function debug_log()
 
     print("FF0F: " .. hex2:format(memory.get(0xFF0F)))
     print("FFFF: " .. hex2:format(memory.get(0xFFFF)))
+
+    print("")
+
+    print("HEX: " .. hex2:format(memory.get(regs.get_PC())) .. " " ..
+              hex2:format(memory.get(regs.get_PC() + 1)) .. " " ..
+              hex2:format(memory.get(regs.get_PC() + 2)) .. " " ..
+              hex2:format(memory.get(regs.get_PC() + 3)) .. " ")
+    print("CHECK HEX: " .. hex2:format(check.hex0) .. " " ..
+              hex2:format(check.hex1) .. " " .. hex2:format(check.hex2) .. " " ..
+              hex2:format(check.hex3) .. " ")
+
+    print("Prev opcodes:")
+    print(hex4:format(prev_opcodes[#prev_opcodes - 1][1]) .. ": " ..
+              hex2:format(prev_opcodes[#prev_opcodes - 1][2]))
+    print(hex4:format(prev_opcodes[#prev_opcodes - 2][1]) .. ": " ..
+              hex2:format(prev_opcodes[#prev_opcodes - 2][2]))
+    print(hex4:format(prev_opcodes[#prev_opcodes - 3][1]) .. ": " ..
+              hex2:format(prev_opcodes[#prev_opcodes - 3][2]))
+    print(hex4:format(prev_opcodes[#prev_opcodes - 4][1]) .. ": " ..
+              hex2:format(prev_opcodes[#prev_opcodes - 4][2]))
 
     local start = math.max(regs.PC - (regs.PC % 8) - 8, 0)
     for i = start, start + 31 do
@@ -920,17 +960,19 @@ end
 function love.update(dt)
     while run do
         instlen = 0
-        instcycles = -1
+        inst_cycles = -1
 
         if not halt then
             run_inst()
         else
-            instcycles = 1
+            inst_cycles = 1
         end
 
-        if check.check or regs.get_PC() == 0x100 then check_log() end
+        if log_file ~= nil and (check.check or regs.get_PC() == 0x100) then
+            check_log()
+        end
 
-        if instcycles == -1 then
+        if inst_cycles == -1 then
             print("Unset instcycles")
             debug_log()
         end
@@ -963,14 +1005,6 @@ function love.update(dt)
     love.graphics.points(points)
 
     love.graphics.setCanvas()
-
-    -- local scrolly = memory[0xFF42]
-    -- local scrollx = memory[0xFF43]
-    -- print("Vertical blank!")
-    -- print(hex2:format(scrollx))
-    -- print(hex2:format(scrolly))
-    -- print()
-    -- print()
 end
 
 function check_log()
@@ -988,11 +1022,18 @@ function check_log()
         check.l = tonumber(line:sub(46, 47), 16)
         check.sp = tonumber(line:sub(53, 56), 16)
         check.pc = tonumber(line:sub(65, 68), 16)
+        check.hex0 = tonumber(line:sub(71, 72), 16)
+        check.hex1 = tonumber(line:sub(74, 75), 16)
+        check.hex2 = tonumber(line:sub(77, 78), 16)
+        check.hex3 = tonumber(line:sub(80, 81), 16)
         if check.a ~= regs.get_A() or check.f ~= get_lo16(regs.get_AF()) or
             check.b ~= regs.get_B() or check.c ~= regs.get_C() or check.d ~=
             regs.get_D() or check.e ~= regs.get_E() or check.h ~= regs.get_H() or
             check.l ~= regs.get_L() or check.sp ~= regs.get_SP() or check.pc ~=
-            regs.get_PC() then dbg = true end
+            regs.get_PC() or check.hex0 ~= memory.get(regs.get_PC()) or
+            check.hex1 ~= memory.get(regs.get_PC() + 1) or check.hex2 ~=
+            memory.get(regs.get_PC() + 2) or check.hex3 ~=
+            memory.get(regs.get_PC() + 3) then dbg = true end
     end
 end
 
@@ -1252,6 +1293,7 @@ function love.draw()
 
     love.graphics.setColor(0.4, 0.7, 0.3)
     love.graphics.print(hex4:format(regs.get_PC()))
+    love.graphics.print(inst_count, 0, 10)
 end
 
 function love.keypressed(key, scancode, isrepeat)
@@ -1354,15 +1396,19 @@ function init_array(arr, bytes) for i = 0, bytes - 1, 1 do arr[i] = 0x00 end end
 function run_inst()
     local opcode = memory.get(regs.get_PC())
 
+    prev_opcodes[#prev_opcodes + 1] = {regs.get_PC(), opcode}
+
+    inst_count = inst_count + 1
+
+    -- print(hex4:format(regs.PC))
+    -- print(hex2:format(opcode))
+
     if dbg or breakpoints[regs.get_PC()] ~= nil then
         dbg = true
         print("Breakpoint!")
         debug_log()
     end
     if dbg then run = false end
-
-    -- print(hex4:format(regs.PC))
-    -- print(hex2:format(opcode))
 
     regs.inc_PC(1)
 
@@ -1387,7 +1433,7 @@ function run_inst()
                     insts.NOP()
                 elseif y == 1 then
                     regs.inc_PC(2)
-                    instcycles = 5
+                    inst_cycles = 5
                     memory.set(nn, get_lo16(regs.get_SP()))
                     memory.set(nn + 1, get_hi16(regs.get_SP()))
                 elseif y == 2 then
@@ -1403,62 +1449,62 @@ function run_inst()
             elseif z == 1 then
                 if q == 0 then
                     regs.inc_PC(2)
-                    instcycles = 3
+                    inst_cycles = 3
                     regs["set_" .. lookups.rp[p]](nn)
                 elseif q == 1 then
-                    instcycles = 2
+                    inst_cycles = 2
                     regs.set_HL(insts.ADD(regs.get_HL(), regs[lookups.rp[p]]))
                 end
             elseif z == 2 then
                 if q == 0 then
                     if p == 0 then
-                        instcycles = 2
+                        inst_cycles = 2
                         memory.set(regs.get_BC(), regs.get_A())
                     end
                     if p == 1 then
-                        instcycles = 2
+                        inst_cycles = 2
                         memory.set(regs.get_DE(), regs.get_A())
                     end
                     if p == 2 then
-                        instcycles = 2
+                        inst_cycles = 2
                         memory.set(regs.get_HL(), regs.get_A())
                         regs.inc_HL()
                     end
                     if p == 3 then
-                        instcycles = 2
+                        inst_cycles = 2
                         memory.set(regs.get_HL(), regs.get_A())
                         regs.dec_HL()
                     end
                 elseif q == 1 then
                     if p == 0 then
-                        instcycles = 2
+                        inst_cycles = 2
                         regs.set_A(memory.get(regs.get_BC()))
                     end
                     if p == 1 then
-                        instcycles = 2
+                        inst_cycles = 2
                         regs.set_A(memory.get(regs.get_DE()))
                     end
                     if p == 2 then
-                        instcycles = 2
+                        inst_cycles = 2
                         regs.set_A(memory.get(regs.get_HL()))
                         regs.inc_HL()
                     end
                     if p == 3 then
-                        instcycles = 2
+                        inst_cycles = 2
                         regs.set_A(memory.get(regs.get_HL()))
                         regs.dec_HL()
                     end
                 end
             elseif z == 3 then
                 if q == 0 then
-                    instcycles = 2
+                    inst_cycles = 2
                     local value = regs[lookups.rp[p]] + 1
                     while value > 0xFFFF do
                         value = value - 0x10000
                     end
                     regs[lookups.rp[p]] = value
                 elseif q == 1 then
-                    instcycles = 2
+                    inst_cycles = 2
                     local value = regs[lookups.rp[p]] - 1
                     while value < 0 do
                         value = value + 0x10000
@@ -1473,7 +1519,7 @@ function run_inst()
                     insts.DEC8(regs["get_" .. lookups.r[y]]()))
             elseif z == 6 then
                 regs.inc_PC(1)
-                instcycles = 2
+                inst_cycles = 2
                 regs["set_" .. lookups.r[y]](n)
             elseif z == 7 then
                 if y == 0 then
@@ -1499,9 +1545,9 @@ function run_inst()
                 insts.HALT()
             else
                 if lookups.r[y] == "(HL)" or lookups.r[z] == "(HL)" then
-                    instcycles = 2
+                    inst_cycles = 2
                 else
-                    instcycles = 1
+                    inst_cycles = 1
                 end
                 regs["set_" .. lookups.r[y]](regs["get_" .. lookups.r[z]]())
             end
@@ -1512,26 +1558,26 @@ function run_inst()
                 if y >= 0 and y <= 3 then
                     insts.RETC(lookups.cc[y]())
                 elseif y == 4 then
-                    instcycles = 3
+                    inst_cycles = 3
                     regs.inc_PC(1)
                     memory.set(0xFF00 + n, regs.get_A())
                 elseif y == 5 then
-                    instcycles = 4
+                    inst_cycles = 4
                     regs.inc_PC(1)
                     regs.set_SP(insts.ADDSPD(d))
                 elseif y == 6 then
-                    instcycles = 3
+                    inst_cycles = 3
                     regs.inc_PC(1)
                     regs.set_A(memory.get(0xFF00 + n))
                 elseif y == 7 then
-                    instcycles = 3
+                    inst_cycles = 3
                     regs.inc_PC(1)
 
                     regs.set_HL(insts.ADDSPD(d))
                 end
             elseif z == 1 then
                 if q == 0 then
-                    instcycles = 3
+                    inst_cycles = 3
                     regs["set_" .. lookups.rp2[p]](insts.POP())
                 elseif q == 1 then
                     if p == 0 then
@@ -1539,10 +1585,10 @@ function run_inst()
                     elseif p == 1 then
                         insts.RETI()
                     elseif p == 2 then
-                        instcycles = 1
+                        inst_cycles = 1
                         insts.JP(regs.get_HL())
                     elseif p == 3 then
-                        instcycles = 2
+                        inst_cycles = 2
                         regs.set_SP(regs.get_HL())
                     end
                 end
@@ -1551,23 +1597,23 @@ function run_inst()
                     regs.inc_PC(2)
                     insts.JPC(lookups.cc[y](), nn)
                 elseif y == 4 then
-                    instcycles = 2
+                    inst_cycles = 2
                     memory.set(0xFF00 + regs.get_C(), regs.get_A())
                 elseif y == 5 then
-                    instcycles = 4
+                    inst_cycles = 4
                     regs.inc_PC(2)
                     memory.set(nn, regs.get_A())
                 elseif y == 6 then
-                    instcycles = 2
+                    inst_cycles = 2
                     regs.set_A(memory.get(0xFF00 + regs.get_C()))
                 elseif y == 7 then
-                    instcycles = 4
+                    inst_cycles = 4
                     regs.inc_PC(2)
                     regs.set_A(memory.get(nn))
                 end
             elseif z == 3 then
                 if y == 0 then
-                    instcycles = 4
+                    inst_cycles = 4
                     regs.inc_PC(2)
                     insts.JP(nn)
                 elseif y == 1 then
