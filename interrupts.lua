@@ -1,9 +1,13 @@
 local interrupts = {}
 
+-- clock_main = 0
+-- clock_sub = 0
+-- clock_div = 0
+
 -- -- https://emudev.de/gameboy-emulator/interrupts-and-timers/
 -- -- http://imrannazar.com/GameBoy-Emulation-in-JavaScript:-Timers
--- function run_timer()
---     clock_sub = clock_sub + instcycles
+-- interrupts.run_timer = function()
+--     clock_sub = clock_sub + inst_cycles
 
 --     if clock_sub >= 4 then
 --         clock_main = clock_main + 1
@@ -16,7 +20,7 @@ local interrupts = {}
 --         end
 --     end
 
---     check_timer();
+--     interrupts.check_timer();
 
 --     -- 
 
@@ -50,7 +54,33 @@ local interrupts = {}
 --     -- end
 -- end
 
-interrupts.check_timer = function() end
+-- interrupts.check_timer = function()
+--     if util.get_bit(memory.get(0xFF07), 3) == 1 then
+--         local test_value = bit.band(memory.get(0xFF07), 3)
+--         if test_value == 0 then
+--             threshold = 64
+--         elseif test_value == 1 then
+--             threshold = 1
+--         elseif test_value == 2 then
+--             threshold = 4
+--         elseif test_value == 3 then
+--             threshold = 16
+--         end
+
+--         if clock_main >= threshold then interrupts.step_timer() end
+--     end
+-- end
+
+-- interrupts.step_timer = function()
+--     clock_main = 0
+--     memory.inc(0xFF05)
+
+--     if memory.get(0xFF05) > 255 then
+--         memory.set(0xFF05, 0xFF06)
+
+--         memory.set_IF(3, 1)
+--     end
+-- end
 
 interrupts.run_interrupts = function()
     if regs.IME == 1 then

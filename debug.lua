@@ -26,7 +26,10 @@ dbg.check_log = function()
             regs.get_PC() or check.hex0 ~= memory.get(regs.get_PC()) or
             check.hex1 ~= memory.get(regs.get_PC() + 1) or check.hex2 ~=
             memory.get(regs.get_PC() + 2) or check.hex3 ~=
-            memory.get(regs.get_PC() + 3) then is_debug = true end
+            memory.get(regs.get_PC() + 3) then
+            print("Mismatch found!")
+            is_debug = true
+        end
     end
 end
 
@@ -55,6 +58,7 @@ dbg.print_vram = function()
 end
 
 dbg.debug_log = function()
+    print("----------------------------------------")
     if debug_msg ~= "" then print(debug_msg) end
     print("")
     print("AF: " .. (regs.AF ~= nil and hex4:format(regs.AF) or "nil"))
@@ -64,37 +68,49 @@ dbg.debug_log = function()
     print("SP: " .. (regs.SP ~= nil and hex4:format(regs.SP) or "nil"))
     print("PC: " .. (regs.PC ~= nil and hex4:format(regs.PC) or "nil"))
 
-    print("FF0F: " .. hex2:format(memory.get(0xFF0F)))
-    print("FFFF: " .. hex2:format(memory.get(0xFFFF)))
-
     print("")
 
     print("HEX: " .. hex2:format(memory.get(regs.get_PC())) .. " " ..
               hex2:format(memory.get(regs.get_PC() + 1)) .. " " ..
               hex2:format(memory.get(regs.get_PC() + 2)) .. " " ..
-              hex2:format(memory.get(regs.get_PC() + 3)) .. " ")
+              hex2:format(memory.get(regs.get_PC() + 3)) .. "\n")
 
-    if log_file ~= nil then
+    if not use_bios and log_file ~= nil then
         print("CHECK AF: " .. (hex4:format(util.set_hilo16(check.a, check.f))))
         print("CHECK BC: " .. (hex4:format(util.set_hilo16(check.b, check.c))))
         print("CHECK DE: " .. (hex4:format(util.set_hilo16(check.d, check.e))))
         print("CHECK HL: " .. (hex4:format(util.set_hilo16(check.h, check.l))))
         print("CHECK SP: " .. (hex4:format(check.sp)))
         print("CHECK PC: " .. (hex4:format(check.pc)))
+
+        print("")
+
         print("CHECK HEX: " .. hex2:format(check.hex0) .. " " ..
                   hex2:format(check.hex1) .. " " .. hex2:format(check.hex2) ..
-                  " " .. hex2:format(check.hex3) .. " ")
+                  " " .. hex2:format(check.hex3) .. "\n")
     end
 
-    print("Prev opcodes:")
-    print(hex4:format(prev_opcodes[#prev_opcodes - 1][1]) .. ": " ..
-              hex2:format(prev_opcodes[#prev_opcodes - 1][2]))
-    print(hex4:format(prev_opcodes[#prev_opcodes - 2][1]) .. ": " ..
-              hex2:format(prev_opcodes[#prev_opcodes - 2][2]))
-    print(hex4:format(prev_opcodes[#prev_opcodes - 3][1]) .. ": " ..
-              hex2:format(prev_opcodes[#prev_opcodes - 3][2]))
-    print(hex4:format(prev_opcodes[#prev_opcodes - 4][1]) .. ": " ..
-              hex2:format(prev_opcodes[#prev_opcodes - 4][2]))
+    print("FF00: " .. hex2:format(memory.get(0xFF00)))
+    print("FF0F: " .. hex2:format(memory.get(0xFF0F)))
+    print("FF40: " .. hex2:format(memory.get(0xFF40)))
+    print("FF44: " .. hex2:format(memory.get(0xFF44)))
+    print("FFFF: " .. hex2:format(memory.get(0xFFFF)))
+
+    print("")
+    print("Instructions: " .. inst_count)
+    print("Scan count: " .. scancount)
+
+    if inst_count > 5 then
+        print("Prev opcodes:")
+        print(hex4:format(prev_opcodes[#prev_opcodes - 1][1]) .. ": " ..
+                  hex2:format(prev_opcodes[#prev_opcodes - 1][2]))
+        print(hex4:format(prev_opcodes[#prev_opcodes - 2][1]) .. ": " ..
+                  hex2:format(prev_opcodes[#prev_opcodes - 2][2]))
+        print(hex4:format(prev_opcodes[#prev_opcodes - 3][1]) .. ": " ..
+                  hex2:format(prev_opcodes[#prev_opcodes - 3][2]))
+        print(hex4:format(prev_opcodes[#prev_opcodes - 4][1]) .. ": " ..
+                  hex2:format(prev_opcodes[#prev_opcodes - 4][2]))
+    end
 
     local start = math.max(regs.PC - (regs.PC % 8) - 8, 0)
     for i = start, start + 31 do
@@ -106,7 +122,7 @@ dbg.debug_log = function()
             end
             io.write("\n" .. hex4:format(i) .. ": ")
         end
-        io.write(hex2:format(memory[i]) .. ", ")
+        io.write(hex2:format(memory.get(i)) .. ", ")
     end
 
     print("\n\nSTACK:")

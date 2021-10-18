@@ -32,19 +32,16 @@ graphics.run_graphics = function()
     scancount = scancount - instlen
 
     if scancount <= 0 then
-        memory.inc(0xFF44)
-        currentline = memory.get(0xFF44)
+        memory[0xFF44] = memory[0xFF44] + 1
+        currentline = memory[0xFF44]
 
-        scancount = 456
+        scancount = scancount + 456
 
-        if currentline == 144 then
-            memory.set_IF(0, 1)
-            return true
-        end
+        if currentline == 144 then memory.set_IF(0, 1) end
 
         if currentline > 153 then
-            -- memory.set_IF(0, 0)
-            memory.set(0xFF44, 0)
+            memory[0xFF44] = 0
+            return true
         end
 
         if currentline < 144 then draw_scanline() end

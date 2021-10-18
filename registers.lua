@@ -14,6 +14,8 @@ regs.HL = 0x0000
 regs.SP = 0x0000 -- stack pointer
 regs.PC = 0x0000 -- program counter
 regs.IME = 0
+regs.DIV = 0x0000
+
 -- inc program counter
 regs.inc_PC = function(n)
     regs.set_PC(regs.get_PC() + n)
@@ -47,10 +49,6 @@ regs.set_A = function(value)
         print("Tried to set A to nil")
         dbg.debug_log()
     end
-    -- if value == 0xB6 then
-    --     print("Setting A!")
-    --     debug_log()
-    -- end
     regs.set_AF(util.set_hi16(regs.AF, value))
 end
 regs.set_B = function(value) regs.set_BC(util.set_hi16(regs.BC, value)) end
@@ -105,5 +103,13 @@ regs.get_CF = function() return regs.get_c() == 1 end
 
 regs.set_IME = function(value) regs.IME = value end
 regs.get_IME = function() return regs.IME end
+
+regs.get_DIV = function() return regs.DIV end
+regs.set_DIV = function(value) regs.DIV = value end
+regs.inc_DIV = function(value)
+    local value = memory[0xFF04] + 1
+    while value > 0xFF do value = value - 0x100 end
+    memory[0xFF04] = value
+end
 
 return regs

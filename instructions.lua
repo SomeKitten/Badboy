@@ -1,10 +1,6 @@
 local insts = {}
 
-insts.NOP = function()
-    inst_cycles = 1
-    -- print("NOP")
-    -- debug_log()
-end
+insts.NOP = function() inst_cycles = 1 end
 insts.STOP = function()
     inst_cycles = 1
 
@@ -24,8 +20,14 @@ insts.JRC = function(condition, relative)
         inst_cycles = 2
     end
 end
-insts.INC8 = function(value)
-    inst_cycles = 1
+insts.INC8 = function(reg)
+    if reg == "(HL)" then
+        inst_cycles = 3
+    else
+        inst_cycles = 1
+    end
+
+    value = regs["get_" .. reg]()
 
     value = value + 1
 
@@ -35,10 +37,16 @@ insts.INC8 = function(value)
     regs.set_n(0)
     regs.set_h(bit.band(value, 0xF) == 0 and 1 or 0)
 
-    return value
+    regs["set_" .. reg](value)
 end
-insts.DEC8 = function(value)
-    inst_cycles = 1
+insts.DEC8 = function(reg)
+    if reg == "(HL)" then
+        inst_cycles = 3
+    else
+        inst_cycles = 1
+    end
+
+    value = regs["get_" .. reg]()
 
     value = value - 1
 
@@ -48,7 +56,7 @@ insts.DEC8 = function(value)
     regs.set_n(1)
     regs.set_h(bit.band(value, 0xF) == 0xF and 1 or 0)
 
-    return value
+    regs["set_" .. reg](value)
 end
 insts.RLCA = function()
     inst_cycles = 1
@@ -140,6 +148,8 @@ end
 insts.HALT = function()
     inst_cycles = 0
     halt = true
+
+    print("HALT")
 end
 insts["ADD A"] = function(value)
     if type(value) == "string" then
